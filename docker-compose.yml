@@ -1,0 +1,34 @@
+services:
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ollama-pull:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["ollama", "pull", "llama3.2"]
+
+  app:
+    build: .
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_AI_OLLAMA_BASE_URL: http://ollama:11434
+      SPRING_AI_OLLAMA_CHAT_OPTIONS_MODEL: llama3.2
+      BAHN_ADVISOR_ENABLED: "true"
+
+volumes:
+  ollama_data:
