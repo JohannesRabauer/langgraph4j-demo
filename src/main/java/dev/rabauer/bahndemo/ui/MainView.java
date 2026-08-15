@@ -13,14 +13,12 @@ import dev.rabauer.bahndemo.ui.component.JourneyResultsGrid;
 import dev.rabauer.bahndemo.ui.component.JourneySearchPanel;
 import dev.rabauer.bahndemo.ui.component.MonitoringPanel;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Single-view app (deliberately - keeps one UI instance alive for server push updates). Lays out
  * search -> results -> monitoring top to bottom and wires the components together.
- *
- * TODO(stream): wire JourneySearchPanel#onSearch to dbApiClient.searchJourneys(...) and populate
- * resultsGrid - currently the search callback body is empty.
  */
 @Route("")
 public class MainView extends VerticalLayout {
@@ -47,7 +45,10 @@ public class MainView extends VerticalLayout {
         this.monitoringPanel = monitoringPanel;
 
         searchPanel.onSearch((from, to) -> {
-            // TODO(stream): dbApiClient.searchJourneys(from.id(), to.id(), Instant.now()); resultsGrid.setItems(...)
+            if (from == null || to == null) {
+                return;
+            }
+            resultsGrid.setItems(dbApiClient.searchJourneys(from.id(), to.id(), Instant.now()));
         });
 
         resultsGrid.onMonitorRequested(this::startMonitoring);
