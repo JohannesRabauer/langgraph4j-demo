@@ -1,6 +1,8 @@
 package dev.rabauer.bahndemo.ui;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
 import dev.rabauer.bahndemo.client.DbApiClient;
@@ -64,7 +66,11 @@ public class MainView extends VerticalLayout {
             }
         });
 
-        add(searchPanel, resultsGrid, monitoringPanel);
+        add(new H2("Deutsche Bahn Delay Assistant"),
+                new Paragraph("Search a connection and click \"Monitor this connection\" to have the assistant "
+                        + "watch it. If it's delayed, the assistant will suggest alternatives and pause for "
+                        + "your decision before doing anything."),
+                searchPanel, resultsGrid, monitoringPanel);
     }
 
     private void startMonitoring(JourneyDto journey) {
