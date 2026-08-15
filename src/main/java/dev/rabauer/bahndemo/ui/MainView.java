@@ -72,5 +72,6 @@ public class MainView extends VerticalLayout {
         UI ui = UI.getCurrent();
         currentJourney.setUiCallback(state -> ui.access(() -> monitoringPanel.render(state)));
         registry.register(currentJourney);
+        monitoringPanel.startMonitoring(journey);
     }
 }

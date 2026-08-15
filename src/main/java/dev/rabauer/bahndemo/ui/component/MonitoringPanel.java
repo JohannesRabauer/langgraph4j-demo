@@ -63,6 +63,14 @@ public class MonitoringPanel extends VerticalLayout {
         this.decisionListener = listener;
     }
 
+    /** Immediate feedback for clicking "Monitor this connection" - before any delay has been detected. */
+    public void startMonitoring(JourneyDto journey) {
+        statusLabel.setText("Monitoring: " + describe(journey));
+        setDecisionControlsVisible(false);
+        alternativesLayout.removeAll();
+        timeline.removeAll();
+    }
+
     public void render(DelayWorkflowState state) {
         renderTimeline(state.log());
 
