@@ -75,7 +75,7 @@ public class DelayMonitorService {
     /** Demo-safety trigger: forces a journey above the delay threshold without calling the DB API. */
     public void simulateDelay(String journeyId) {
         registry.find(journeyId).ifPresent(journey -> {
-            journey.setLastDelaySeconds(properties.delay().thresholdSeconds() + 60);
+            journey.setLastDelaySeconds(properties.delay().thresholdSeconds() + 3600);
             maybeTrigger(journey);
         });
     }
