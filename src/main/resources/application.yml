@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+bahn:
+  api:
+    base-url: https://v6.db.transport.rest
+    default-results: 5
+    # profile: dbnav   # optional, uncomment to pin the v6.db.transport.rest backend profile
+  delay:
+    threshold-seconds: 300
+    poll-interval-ms: 30000   # DB API rate limit is 100 req/min - stay well under it for one demo journey
+  advisor:
+    enabled: false            # flip to true + set OPENAI_API_KEY to demo the LLM advisor node
+
+# Read manually in AdvisorConfig (not via the langchain4j-open-ai-spring-boot-starter autoconfig,
+# since every published version of that starter is beta-tagged).
+langchain4j:
+  open-ai:
+    api-key: ${OPENAI_API_KEY:}
+    model-name: gpt-4o-mini

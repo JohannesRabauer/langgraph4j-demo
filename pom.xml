@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>dev.rabauer</groupId>
+  <artifactId>bahn-langgraph4j-demo</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>bahn-langgraph4j-demo</name>
+  <description>Deutsche Bahn delay monitoring with a langgraph4j human-in-the-loop workflow, Spring Boot + Vaadin UI</description>
+
+  <!--
+    Vaadin 24.x is now entirely in paid "Extended Maintenance" (confirmed live: flow 24.10.x
+    refuses to start, even in dev mode, without a Vaadin Pro/Prime license). Vaadin 25 + Spring
+    Boot 4 is the current free/community combo, hence the newer-than-originally-planned baseline.
+  -->
+  <properties>
+    <java.version>21</java.version>
+    <vaadin.version>25.2.6</vaadin.version>
+    <langgraph4j.version>1.8.24</langgraph4j.version>
+    <langchain4j.version>1.19.0</langchain4j.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.vaadin</groupId>
+        <artifactId>vaadin-bom</artifactId>
+        <version>${vaadin.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>dev.langchain4j</groupId>
+        <artifactId>langchain4j-bom</artifactId>
+        <version>${langchain4j.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Vaadin Flow (servlet-based) -->
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>vaadin-spring-boot-starter</artifactId>
+    </dependency>
+    <!-- Needed for the dev-mode live-reload server (vaadin-spring-boot-starter doesn't pull this
+         in transitively on Vaadin 25). Fine to ship in the demo's production profile too - this
+         isn't a real production deployment, so the extra dev-server jar isn't worth excluding. -->
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>vaadin-dev</artifactId>
+    </dependency>
+
+    <!-- Web (servlet stack, gives us RestClient + @Scheduled support). Do NOT add webflux: Vaadin needs the servlet stack. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- langgraph4j -->
+    <dependency>
+      <groupId>org.bsc.langgraph4j</groupId>
+      <artifactId>langgraph4j-core</artifactId>
+      <version>${langgraph4j.version}</version>
+    </dependency>
+
+    <!-- Optional LLM advisor node. Compiles fine unused; gated at runtime by bahn.advisor.enabled. -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-open-ai</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <!-- prepare-frontend only: cheap, sets up the frontend dir for Vaadin's dev-mode server
+             (webpack/vite), which runs on the fly and needs no license. Do NOT bind build-frontend
+             here - it bundles a production frontend, which flips Vaadin into production mode and
+             (for Vaadin versions in Extended Maintenance) triggers a paid-license check at startup. -->
+        <groupId>com.vaadin</groupId>
+        <artifactId>vaadin-maven-plugin</artifactId>
+        <version>${vaadin.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>prepare-frontend</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <repositories>
+    <repository>
+      <id>vaadin-addons</id>
+      <url>https://maven.vaadin.com/vaadin-addons</url>
+    </repository>
+  </repositories>
+
+  <profiles>
+    <profile>
+      <!-- Activate for production builds: creates an optimized, minified frontend bundle. -->
+      <id>production</id>
+      <properties>
+        <vaadin.productionMode>true</vaadin.productionMode>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.vaadin</groupId>
+            <artifactId>vaadin-maven-plugin</artifactId>
+            <version>${vaadin.version}</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>build-frontend</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
