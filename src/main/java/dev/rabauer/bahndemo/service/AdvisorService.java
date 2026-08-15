@@ -6,6 +6,6 @@ import java.util.List;
 
 public interface AdvisorService {
 
-    /** Returns a short human-readable recommendation given the delay and the found alternatives. */
-    String recommend(int delaySeconds, List<JourneyDto> alternatives);
+    /** Recommends a specific alternative (or none) given the delay and the found alternatives. */
+    AdvisorRecommendation recommend(int delaySeconds, List<JourneyDto> alternatives);
 }

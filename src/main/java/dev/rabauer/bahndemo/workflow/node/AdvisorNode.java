@@ -1,10 +1,12 @@
 package dev.rabauer.bahndemo.workflow.node;
 
+import dev.rabauer.bahndemo.service.AdvisorRecommendation;
 import dev.rabauer.bahndemo.service.AdvisorService;
 import dev.rabauer.bahndemo.workflow.DelayWorkflowState;
 import org.bsc.langgraph4j.action.NodeAction;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,9 +25,15 @@ public class AdvisorNode implements NodeAction<DelayWorkflowState> {
 
     @Override
     public Map<String, Object> apply(DelayWorkflowState state) throws Exception {
-        String recommendation = advisorService.recommend(state.delaySeconds().orElse(0), state.alternatives());
-        return Map.of(
-                "advisorRecommendation", recommendation,
-                "log", List.of("advisor: " + recommendation));
+        AdvisorRecommendation recommendation =
+                advisorService.recommend(state.delaySeconds().orElse(0), state.alternatives());
+
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("advisorRecommendation", recommendation.rationale());
+        if (recommendation.recommendedIndex() != null) {
+            updates.put("advisorRecommendedIndex", recommendation.recommendedIndex());
+        }
+        updates.put("log", List.of("advisor: " + recommendation.rationale()));
+        return updates;
     }
 }

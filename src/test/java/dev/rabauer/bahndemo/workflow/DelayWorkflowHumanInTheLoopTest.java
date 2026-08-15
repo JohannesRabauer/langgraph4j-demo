@@ -75,10 +75,44 @@ class DelayWorkflowHumanInTheLoopTest {
             DelayWorkflowState state = graph.getState(config).state();
             assertThat(state.outcome()).isEmpty();
             assertThat(state.advisorRecommendation()).isPresent();
+            assertThat(state.advisorRecommendedIndex()).contains(0);
             assertThat(state.alternatives()).hasSize(1);
         });
 
         orchestrationService.resumeWithDecision(journeyId, HumanDecision.PICK_ALTERNATIVE, 0);
+
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            DelayWorkflowState state = graph.getState(config).state();
+            assertThat(state.outcome()).isPresent();
+            assertThat(state.outcome().get()).contains("IC 200");
+        });
+    }
+
+    @Test
+    void acceptSuggestedAppliesTheAdvisorsRecommendedAlternative() {
+        LocationDto origin = new LocationDto("station", "8011160", "Berlin Hbf", null);
+        LocationDto destination = new LocationDto("station", "8000261", "München Hbf", null);
+        Instant now = Instant.now();
+
+        JourneyDto originalJourney = journeyOf("original-token", origin, destination, now, now.plusSeconds(3600), "ICE 100");
+        JourneyDto alternative = journeyOf("alt-1", origin, destination, now.plusSeconds(600), now.plusSeconds(4000), "IC 200");
+
+        when(dbApiClient.searchJourneys(eq("8011160"), eq("8000261"), any(Instant.class)))
+                .thenReturn(List.of(alternative));
+
+        String journeyId = "test-journey-" + UUID.randomUUID();
+        MonitoredJourney journey = new MonitoredJourney(journeyId, originalJourney);
+        journey.setLastDelaySeconds(400);
+        registry.register(journey);
+
+        orchestrationService.startWorkflow(journey);
+
+        RunnableConfig config = RunnableConfig.builder().threadId(journeyId).build();
+
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(graph.getState(config).state().advisorRecommendedIndex()).contains(0));
+
+        orchestrationService.resumeWithDecision(journeyId, HumanDecision.ACCEPT_SUGGESTED, null);
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
             DelayWorkflowState state = graph.getState(config).state();

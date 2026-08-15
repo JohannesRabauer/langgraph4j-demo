@@ -4,6 +4,7 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
 import dev.rabauer.bahndemo.client.dto.JourneyDto;
 import dev.rabauer.bahndemo.client.dto.LegDto;
+import dev.rabauer.bahndemo.util.TimeFormat;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
@@ -44,7 +45,7 @@ public class JourneyResultsGrid extends Grid<JourneyDto> {
     }
 
     private String format(java.time.Instant instant) {
-        return instant != null ? instant.toString() : "-";
+        return instant != null ? TimeFormat.format(instant) : "-";
     }
 
     private String delayText(LegDto leg) {

@@ -48,6 +48,11 @@ public class DelayWorkflowState extends AgentState {
         return value("advisorRecommendation");
     }
 
+    /** The alternatives() index the advisor recommends, if any. */
+    public Optional<Integer> advisorRecommendedIndex() {
+        return value("advisorRecommendedIndex");
+    }
+
     public Optional<HumanDecision> humanDecision() {
         return value("humanDecision");
     }
