@@ -47,7 +47,7 @@ public class DelayWorkflowConfig {
             ApplyDecisionNode applyDecisionNode,
             BaseCheckpointSaver checkpointSaver) throws GraphStateException {
 
-        StateGraph<DelayWorkflowState> graph = new StateGraph<DelayWorkflowState>(DelayWorkflowState::new)
+        StateGraph<DelayWorkflowState> graph = new StateGraph<>(DelayWorkflowState.SCHEMA, DelayWorkflowState::new)
                 .addNode(NODE_ANALYZE_DELAY, node_async(analyzeDelayNode))
                 .addNode(NODE_ADVISOR, node_async(advisorNode))
                 .addNode(NODE_HUMAN_DECISION, node_async(humanDecisionNode))
