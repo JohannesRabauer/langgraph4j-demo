@@ -10,11 +10,14 @@ bahn:
     threshold-seconds: 300
     poll-interval-ms: 30000   # DB API rate limit is 100 req/min - stay well under it for one demo journey
   advisor:
-    enabled: false            # flip to true + set OPENAI_API_KEY to demo the LLM advisor node
+    enabled: false            # flip to true (docker-compose.yml already does) to demo the Ollama-backed LLM advisor
 
-# Read manually in AdvisorConfig (not via the langchain4j-open-ai-spring-boot-starter autoconfig,
-# since every published version of that starter is beta-tagged).
-langchain4j:
-  open-ai:
-    api-key: ${OPENAI_API_KEY:}
-    model-name: gpt-4o-mini
+# Autoconfigured by spring-ai-starter-model-ollama. Defaults point at a local Ollama install; docker-compose.yml
+# overrides both via SPRING_AI_OLLAMA_BASE_URL / SPRING_AI_OLLAMA_CHAT_OPTIONS_MODEL env vars.
+spring:
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: llama3.2

@@ -26,7 +26,7 @@
     <java.version>21</java.version>
     <vaadin.version>25.2.6</vaadin.version>
     <langgraph4j.version>1.8.24</langgraph4j.version>
-    <langchain4j.version>1.19.0</langchain4j.version>
+    <spring-ai.version>2.0.0</spring-ai.version>
   </properties>
 
   <dependencyManagement>
@@ -39,9 +39,9 @@
         <scope>import</scope>
       </dependency>
       <dependency>
-        <groupId>dev.langchain4j</groupId>
-        <artifactId>langchain4j-bom</artifactId>
-        <version>${langchain4j.version}</version>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -79,14 +79,11 @@
       <version>${langgraph4j.version}</version>
     </dependency>
 
-    <!-- Optional LLM advisor node. Compiles fine unused; gated at runtime by bahn.advisor.enabled. -->
+    <!-- Optional LLM advisor node, backed by Ollama. Autoconfigures a ChatClient.Builder/ChatModel from
+         spring.ai.ollama.* properties; only actually invoked when bahn.advisor.enabled=true. -->
     <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>dev.langchain4j</groupId>
-      <artifactId>langchain4j-open-ai</artifactId>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-starter-model-ollama</artifactId>
     </dependency>
 
     <dependency>
