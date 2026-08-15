@@ -21,9 +21,12 @@ the centerpiece.
   https://vaadin.com/docs/latest/compatibility for whichever version is *currently* free.
 - `org.bsc.langgraph4j:langgraph4j-core:1.8.24` for the workflow engine.
 - [v6.db.transport.rest](https://v6.db.transport.rest/) for Deutsche Bahn data - free, unofficial,
-  no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute.
-- Optional `langchain4j` + `langchain4j-open-ai` "advisor" node, fully gated behind
-  `bahn.advisor.enabled` so the app builds and runs with zero API keys by default.
+  no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute. `DbApiClient` falls back to a
+  small hardcoded offline dataset on any failure (timeout, 503, ...) so the demo stays reliable
+  regardless of that API's availability - observed flaky in practice while building this.
+- Optional LLM advisor node via **Spring AI's Ollama integration** (`spring-ai-starter-model-ollama`,
+  model `llama3.2`), gated behind `bahn.advisor.enabled` so the app builds and runs with zero external
+  dependencies by default. `docker-compose.yml` runs Ollama alongside the app and enables it.
 
 ## Architecture
 
@@ -54,43 +57,39 @@ Package layout (base package `dev.rabauer.bahndemo`):
 - `config` - `AppShellConfig` (`@Push`), `RestClientConfig`, `AsyncConfig`, `AdvisorConfig`,
   `BahnDemoProperties`.
 
-## What's scaffolded vs. left for the stream
+## Status
 
-Already wired against verified real APIs so the stream doesn't have to fight library signatures:
-the full `pom.xml`, package structure, `DelayWorkflowConfig` (graph + `interruptBefore` +
-`MemorySaver`), `WorkflowOrchestrationService` (start/resume/getState + `UI.access` push pattern),
-`DelayWorkflowState`, and the `AdvisorService` conditional-bean wiring. `mvn spring-boot:run` starts
-cleanly with zero environment variables.
+Fully implemented and verified end to end, including the human-in-the-loop pause/resume, both locally
+(`mvn test`, `mvn spring-boot:run`) and dockerized (`docker compose up`, with the real `llama3.2`
+model via Ollama). Notable things found and fixed while implementing:
 
-Left as `// TODO(stream)` - the actual demoable logic:
+- langgraph4j's `MemorySaver` checkpointer serializes graph state via `ObjectOutputStream` on every
+  step - every DTO stored in `DelayWorkflowState` (`JourneyDto`, `LegDto`, `LocationDto`, `LineDto`)
+  has to implement `Serializable`, or checkpointing throws `NotSerializableException`.
+- `log` accumulation needs an explicit schema: `DelayWorkflowState.SCHEMA` uses
+  `Channels.appender(ArrayList::new)`, passed into `new StateGraph<>(SCHEMA, DelayWorkflowState::new)` -
+  without it, each node's log line silently overwrites the previous one instead of accumulating.
+- `JourneySearchPanel`, `JourneyResultsGrid`, and `MonitoringPanel` must be Spring
+  **prototype**-scoped. As plain singleton `@Component` beans they broke on a second browser tab/reload
+  with "Can't move a node from one state tree to another" - a Vaadin component can only ever belong to
+  one UI's state tree.
+- `RuleBasedAdvisorService` and `LlmAdvisorService` are both active `AdvisorService` beans once
+  `bahn.advisor.enabled=true`; `LlmAdvisorService` needs `@Primary` so `AdvisorNode`'s single-bean
+  injection point resolves without ambiguity.
+- `DbApiClient`'s `RestClient` needs an explicit short connect/read timeout (`RestClientConfig`, 3s) -
+  without it, a live `v6.db.transport.rest` outage blocks each search for ~10s (the underlying
+  reactor-netty client's default) before falling back to offline data.
 
-1. **`DbApiClient`** - implement the HTTP calls. First `curl` `/locations` and `/journeys` on
-   `v6.db.transport.rest` live to confirm exact JSON shapes (especially `/journeys/{refreshToken}`'s
-   envelope) before writing the DTO mapping.
-2. **Search UI** - wire `JourneySearchPanel` + `JourneyResultsGrid` to the real client. First
-   satisfying milestone: search Berlin → Munich, see a grid of journeys.
-3. **Monitoring registration** - select a journey, register a `MonitoredJourney`, confirm the
-   "Simulate delay" button flips state and the registry/UI plumbing works, before graph complexity
-   enters.
-4. **`DelayMonitorService.pollAll()`** - real polling via `refreshJourney`, threshold comparison.
-5. **Graph nodes, linear happy path, no interrupt yet** - implement `AnalyzeDelayNode`, a trivial
-   rule-based `AdvisorNode`, and pass-through `HumanDecisionNode`/`ApplyDecisionNode`; smoke-test with
-   `invoke()` before adding the interrupt.
-6. **Confirm the interrupt actually halts** - log-verify `outcome` stays empty after `analyzeDelay`/
-   `advisor` run.
-7. **Push the pause to the UI + resume wiring** - the "wow" moment: trigger a simulated delay, watch
-   the UI reactively show the paused decision, click through it, watch it resume and finish.
-8. **Real rule-based advisor logic** - earliest-actual-arrival heuristic.
-9. *(stretch)* **LLM advisor** - flip `bahn.advisor.enabled=true`, implement `LlmAdvisorService`'s
-   prompt + call, compare against the rule-based recommendation.
-10. *(stretch)* **Polish** - loading states, DB API error handling, `KEEP_WAITING` re-arming the
-    poller, a `state.log()`-driven timeline panel.
+## Running it
 
-## Running it now
+Locally, no external dependencies (rule-based advisor only):
 
 ```
 mvn spring-boot:run
 ```
 
-Serves an empty-but-reachable Vaadin UI at `http://localhost:8080` - the search form, an empty
-results grid, and an inert monitoring panel. No environment variables required.
+Dockerized, with Ollama and the LLM-backed advisor:
+
+```
+docker compose up
+```
