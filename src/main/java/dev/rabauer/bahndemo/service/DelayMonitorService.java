@@ -1,9 +1,15 @@
 package dev.rabauer.bahndemo.service;
 
 import dev.rabauer.bahndemo.client.DbApiClient;
+import dev.rabauer.bahndemo.client.dto.JourneyDto;
+import dev.rabauer.bahndemo.client.dto.LegDto;
 import dev.rabauer.bahndemo.config.BahnDemoProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
 
 /**
  * Polls monitored journeys for realtime delay data and triggers the langgraph4j workflow once a
@@ -15,6 +21,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class DelayMonitorService {
+
+    private static final Logger log = LoggerFactory.getLogger(DelayMonitorService.class);
 
     private final DbApiClient dbApiClient;
     private final MonitoredJourneyRegistry registry;
@@ -33,9 +41,35 @@ public class DelayMonitorService {
 
     @Scheduled(fixedDelayString = "${bahn.delay.poll-interval-ms:30000}")
     public void pollAll() {
-        // TODO(stream): for each registry.active() journey, call
-        // dbApiClient.refreshJourney(journey.getJourney().refreshToken()), derive the current delay
-        // in seconds from the refreshed legs, journey.setLastDelaySeconds(...), then maybeTrigger(journey).
+        for (MonitoredJourney journey : registry.active()) {
+            try {
+                pollOne(journey);
+            } catch (Exception e) {
+                log.warn("Polling journey {} failed: {}", journey.getId(), e.toString());
+            }
+        }
+    }
+
+    private void pollOne(MonitoredJourney journey) {
+        JourneyDto original = journey.getJourney();
+        if (original == null || original.refreshToken() == null) {
+            return;
+        }
+        JourneyDto refreshed = dbApiClient.refreshJourney(original.refreshToken());
+        if (refreshed == null) {
+            return;
+        }
+        journey.setJourney(refreshed);
+        journey.setLastDelaySeconds(currentDelaySeconds(refreshed));
+        maybeTrigger(journey);
+    }
+
+    private int currentDelaySeconds(JourneyDto journey) {
+        LegDto lastLeg = journey.lastLeg();
+        if (lastLeg == null) {
+            return 0;
+        }
+        return Optional.ofNullable(lastLeg.arrivalDelay()).orElse(0);
     }
 
     /** Demo-safety trigger: forces a journey above the delay threshold without calling the DB API. */
