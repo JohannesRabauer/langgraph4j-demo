@@ -1,62 +1,168 @@
 package dev.rabauer.bahndemo.workflow;
 
 import dev.rabauer.bahndemo.client.dto.JourneyDto;
-import org.bsc.langgraph4j.state.AgentState;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
- * State threaded through the delay-handling graph (see DelayWorkflowConfig). Every node reads a
- * subset of these keys and returns a partial map of updates, which langgraph4j merges into a new
- * state snapshot.
+ * A snapshot of the delay-handling workflow for one journey, pushed to the UI after each step.
+ *
+ * Plain, hand-rolled state - no checkpointing, no formal graph. It's the primitive stand-in for
+ * what becomes a langgraph4j-managed graph state during the stream (see WorkflowOrchestrationService's
+ * Javadoc). Kept immutable via toBuilder() so each published snapshot is a distinct value, mirroring
+ * how a real graph state update produces a new state rather than mutating one in place.
  */
-public class DelayWorkflowState extends AgentState {
+public final class DelayWorkflowState {
 
-    public DelayWorkflowState(Map<String, Object> initData) {
-        super(initData);
+    private final String journeyId;
+    private final JourneyDto originalJourney;
+    private final Integer delaySeconds;
+    private final List<JourneyDto> alternatives;
+    private final String advisorRecommendation;
+    private final Integer advisorRecommendedIndex;
+    private final HumanDecision humanDecision;
+    private final Integer selectedAlternativeIndex;
+    private final String outcome;
+    private final List<String> log;
+
+    private DelayWorkflowState(Builder builder) {
+        this.journeyId = builder.journeyId;
+        this.originalJourney = builder.originalJourney;
+        this.delaySeconds = builder.delaySeconds;
+        this.alternatives = builder.alternatives;
+        this.advisorRecommendation = builder.advisorRecommendation;
+        this.advisorRecommendedIndex = builder.advisorRecommendedIndex;
+        this.humanDecision = builder.humanDecision;
+        this.selectedAlternativeIndex = builder.selectedAlternativeIndex;
+        this.outcome = builder.outcome;
+        this.log = builder.log;
     }
 
     public Optional<String> journeyId() {
-        return value("journeyId");
+        return Optional.ofNullable(journeyId);
     }
 
     public Optional<JourneyDto> originalJourney() {
-        return value("originalJourney");
+        return Optional.ofNullable(originalJourney);
     }
 
     public Optional<Integer> delaySeconds() {
-        return value("delaySeconds");
+        return Optional.ofNullable(delaySeconds);
     }
 
     public List<JourneyDto> alternatives() {
-        return this.<List<JourneyDto>>value("alternatives").orElseGet(List::of);
+        return alternatives;
     }
 
     public Optional<String> advisorRecommendation() {
-        return value("advisorRecommendation");
+        return Optional.ofNullable(advisorRecommendation);
     }
 
-    /** The alternatives() index the advisor recommends, if any - see AdvisorService/AdvisorRecommendation. */
     public Optional<Integer> advisorRecommendedIndex() {
-        return value("advisorRecommendedIndex");
+        return Optional.ofNullable(advisorRecommendedIndex);
     }
 
     public Optional<HumanDecision> humanDecision() {
-        return value("humanDecision");
+        return Optional.ofNullable(humanDecision);
     }
 
     public Optional<Integer> selectedAlternativeIndex() {
-        return value("selectedAlternativeIndex");
+        return Optional.ofNullable(selectedAlternativeIndex);
     }
 
-    /** Only ever set by ApplyDecisionNode - its presence means the graph run has completed. */
+    /** Only ever set once a decision has been applied - its presence means the run has completed. */
     public Optional<String> outcome() {
-        return value("outcome");
+        return Optional.ofNullable(outcome);
     }
 
     public List<String> log() {
-        return this.<List<String>>value("log").orElseGet(List::of);
+        return log;
+    }
+
+    public Builder toBuilder() {
+        Builder builder = new Builder();
+        builder.journeyId = journeyId;
+        builder.originalJourney = originalJourney;
+        builder.delaySeconds = delaySeconds;
+        builder.alternatives = alternatives;
+        builder.advisorRecommendation = advisorRecommendation;
+        builder.advisorRecommendedIndex = advisorRecommendedIndex;
+        builder.humanDecision = humanDecision;
+        builder.selectedAlternativeIndex = selectedAlternativeIndex;
+        builder.outcome = outcome;
+        builder.log = log;
+        return builder;
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+        private String journeyId;
+        private JourneyDto originalJourney;
+        private Integer delaySeconds;
+        private List<JourneyDto> alternatives = List.of();
+        private String advisorRecommendation;
+        private Integer advisorRecommendedIndex;
+        private HumanDecision humanDecision;
+        private Integer selectedAlternativeIndex;
+        private String outcome;
+        private List<String> log = List.of();
+
+        public Builder journeyId(String journeyId) {
+            this.journeyId = journeyId;
+            return this;
+        }
+
+        public Builder originalJourney(JourneyDto originalJourney) {
+            this.originalJourney = originalJourney;
+            return this;
+        }
+
+        public Builder delaySeconds(Integer delaySeconds) {
+            this.delaySeconds = delaySeconds;
+            return this;
+        }
+
+        public Builder alternatives(List<JourneyDto> alternatives) {
+            this.alternatives = alternatives;
+            return this;
+        }
+
+        public Builder advisorRecommendation(String advisorRecommendation) {
+            this.advisorRecommendation = advisorRecommendation;
+            return this;
+        }
+
+        public Builder advisorRecommendedIndex(Integer advisorRecommendedIndex) {
+            this.advisorRecommendedIndex = advisorRecommendedIndex;
+            return this;
+        }
+
+        public Builder humanDecision(HumanDecision humanDecision) {
+            this.humanDecision = humanDecision;
+            return this;
+        }
+
+        public Builder selectedAlternativeIndex(Integer selectedAlternativeIndex) {
+            this.selectedAlternativeIndex = selectedAlternativeIndex;
+            return this;
+        }
+
+        public Builder outcome(String outcome) {
+            this.outcome = outcome;
+            return this;
+        }
+
+        public Builder log(List<String> log) {
+            this.log = log;
+            return this;
+        }
+
+        public DelayWorkflowState build() {
+            return new DelayWorkflowState(this);
+        }
     }
 }
