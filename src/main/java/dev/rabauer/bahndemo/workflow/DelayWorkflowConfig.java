@@ -58,12 +58,15 @@ public class DelayWorkflowConfig {
         CompileConfig compileConfig = CompileConfig.builder()
                 .checkpointSaver(checkpointSaver)
                 .interruptBefore(NODE_HUMAN_DECISION)
+                .releaseThread(true)
                 .build();
+        // Print the graph in Mermaid format for debugging / documentation purposes.
         final var mermaidGraph = graph.getGraph(GraphRepresentation.Type.MERMAID, "DelayWorkflowGraph", false);
         System.out.printf("""
-                ==========================
+                Mermaid representation of the delay-handling graph:
+                ===================================================
                 %s
-                ==========================
+                ===================================================
                 """, mermaidGraph.content());
         return graph.compile(compileConfig);
     }
