@@ -20,6 +20,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +51,10 @@ class DelayWorkflowHumanInTheLoopTest {
     @MockitoBean
     private DbApiClient dbApiClient;
 
+    private DelayWorkflowState toState( Map<String,Object> state) {
+        return graph.stateGraph.getStateFactory().apply(state);
+    }
+
     @Test
     void pausesForHumanDecisionThenResumesToOutcome() {
         LocationDto origin = new LocationDto("station", "8011160", "Berlin Hbf", null);
@@ -79,13 +84,15 @@ class DelayWorkflowHumanInTheLoopTest {
             assertThat(state.alternatives()).hasSize(1);
         });
 
-        orchestrationService.resumeWithDecision(journeyId, HumanDecision.PICK_ALTERNATIVE, 0);
-
-        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
-            DelayWorkflowState state = graph.getState(config).state();
+        orchestrationService.resumeWithDecision(journeyId, HumanDecision.PICK_ALTERNATIVE, 0)
+            .thenAccept(result -> {
+            assertThat(result.isStateDataOrCheckpointSaverTag()).isTrue();
+            final var state = toState(result.asStateDataOrLastCheckpointStateData());
             assertThat(state.outcome()).isPresent();
             assertThat(state.outcome().get()).contains("IC 200");
-        });
+        })
+        .join();
+
     }
 
     @Test
@@ -112,13 +119,14 @@ class DelayWorkflowHumanInTheLoopTest {
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(graph.getState(config).state().advisorRecommendedIndex()).contains(0));
 
-        orchestrationService.resumeWithDecision(journeyId, HumanDecision.ACCEPT_SUGGESTED, null);
-
-        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
-            DelayWorkflowState state = graph.getState(config).state();
-            assertThat(state.outcome()).isPresent();
-            assertThat(state.outcome().get()).contains("IC 200");
-        });
+        orchestrationService.resumeWithDecision(journeyId, HumanDecision.ACCEPT_SUGGESTED, null)
+            .thenAccept(result -> {
+                    assertThat(result.isStateDataOrCheckpointSaverTag()).isTrue();
+                    final var state = toState(result.asStateDataOrLastCheckpointStateData());
+                    assertThat(state.outcome()).isPresent();
+                    assertThat(state.outcome().get()).contains("IC 200");
+            })
+            .join();
     }
 
     private JourneyDto journeyOf(String refreshToken, LocationDto origin, LocationDto destination,
