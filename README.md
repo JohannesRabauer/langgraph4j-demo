@@ -1,23 +1,125 @@
 # langgraph4j-demo
 
+[![Watch the YouTube session](https://img.youtube.com/vi/bLN1iiTlcLU/maxresdefault.jpg)](https://youtube.com/live/bLN1iiTlcLU)
+
 Spring Boot + Vaadin demo of a Deutsche Bahn delay-monitoring workflow built with
 [langgraph4j](https://github.com/langgraph4j/langgraph4j), including a human-in-the-loop pause for
-deciding what to do about a delay. Prepared for the stream at
+deciding what to do about a delay. Built live on stream at
 https://youtube.com/live/bLN1iiTlcLU.
 
-See [DEMO_PLAN.md](DEMO_PLAN.md) for the architecture.
+## What it does
 
-Run locally (no Ollama, rule-based advisor only):
+You search for a Deutsche Bahn connection, pick one to monitor, and the app polls it for delays in
+the background. Once a delay crosses a configurable threshold, a **langgraph4j** `StateGraph`
+kicks in: it looks for alternative connections, optionally asks a local LLM to recommend one, and
+then **pauses the graph and waits for a human decision** in the browser before finalizing an
+outcome. langgraph4j's checkpointing and interrupt/resume mechanics are the centerpiece of the demo.
+
+## Workflow graph
+
+```mermaid
+flowchart TD
+	__START__((start))
+	__END__((stop))
+	analyzeDelay("analyzeDelay")
+	advisor("advisor")
+	humanDecision("humanDecision")
+	applyDecision("applyDecision")
+	__START__:::__START__ --> analyzeDelay:::analyzeDelay
+	analyzeDelay:::analyzeDelay --> advisor:::advisor
+	advisor:::advisor --> humanDecision:::humanDecision
+	humanDecision:::humanDecision --> applyDecision:::applyDecision
+	applyDecision:::applyDecision --> __END__:::__END__
+
+	classDef __START__ fill:black,stroke-width:1px,font-size:xx-small;
+	classDef __END__ fill:black,stroke-width:1px,font-size:xx-small;
+```
+
+The graph halts before `humanDecision` (`interruptBefore("humanDecision")`), pushes the paused
+state to the browser via Vaadin server push, and resumes with `updateState(...)` +
+`GraphInput.resume()` once the user picks a decision. This uses langgraph4j's documented **static
+`interruptBefore(nodeName)`**, not a dynamic `interrupt()` function, which isn't present in
+langgraph4j-core 1.8.24. See [DIAGRAM.md](DIAGRAM.md) for how to regenerate this diagram straight
+from the compiled graph.
+
+End-to-end flow:
 
 ```
+search (client.DbApiClient) -> pick a journey -> monitor it (service.DelayMonitorService,
+@Scheduled polling or the "Simulate delay" button) -> threshold breach ->
+service.WorkflowOrchestrationService starts a langgraph4j run (workflow.DelayWorkflowConfig) ->
+analyzeDelay -> advisor -> [graph halts: interruptBefore("humanDecision")] ->
+push paused state to the browser (Vaadin server push) -> user picks a decision ->
+graph.updateState(...) + graph.stream(GraphInput.resume(), config) ->
+humanDecision -> applyDecision -> END -> push final outcome to the browser
+```
+
+## Tech stack
+
+- Spring Boot 4.1.0 + Vaadin 25.2.6 (Flow) + Java 21.
+- [`org.bsc.langgraph4j:langgraph4j-core:1.8.24`](https://github.com/langgraph4j/langgraph4j) for
+  the workflow engine.
+- [v6.db.transport.rest](https://v6.db.transport.rest/) for Deutsche Bahn data - free, unofficial,
+  no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute. `DbApiClient` falls back to
+  a small hardcoded offline dataset on any failure (timeout, 503, ...) so the demo stays reliable
+  regardless of that API's availability.
+- Optional LLM advisor node via **Spring AI's Ollama integration**
+  (`spring-ai-starter-model-ollama`, model `llama3.2`), gated behind `bahn.advisor.enabled` so the
+  app builds and runs with zero external dependencies by default. `docker-compose.yml` runs Ollama
+  alongside the app and enables it.
+
+## Running it
+
+Locally, no external dependencies (rule-based advisor only):
+
+```bash
 mvn spring-boot:run
 ```
 
-Run fully dockerized, including Ollama and the LLM-backed advisor:
+Fully dockerized, including Ollama and the LLM-backed advisor:
 
-```
+```bash
 docker compose up
 ```
 
 First run pulls the `llama3.2` model into a named volume, which can take a few minutes; the app
 becomes reachable at http://localhost:8080 once that's done.
+
+Run the tests:
+
+```bash
+mvn test
+```
+
+## Configuration
+
+Set in [`application.yml`](src/main/resources/application.yml), overridable via environment
+variables (as `docker-compose.yml` does):
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `bahn.api.base-url` | `https://v6.db.transport.rest` | Deutsche Bahn journey API |
+| `bahn.api.default-results` | `5` | Number of connections returned per search |
+| `bahn.delay.threshold-seconds` | `300` | Delay (in seconds) that triggers the workflow |
+| `bahn.delay.poll-interval-ms` | `30000` | Monitoring poll interval - stays well under the API's 100 req/min limit |
+| `bahn.advisor.enabled` | `false` | Enables the LLM-backed advisor node (needs Ollama reachable) |
+| `spring.ai.ollama.base-url` | `http://localhost:11434` | Ollama endpoint |
+| `spring.ai.ollama.chat.options.model` | `llama3.2` | Model used by the advisor node |
+
+## Project structure
+
+Base package: `dev.rabauer.bahndemo`
+
+- `client` - `DbApiClient` + DTOs for v6.db.transport.rest.
+- `workflow` - `DelayWorkflowState` (the graph's state), `DelayWorkflowConfig` (graph wiring),
+  `HumanDecision` enum, `workflow.node.*` (the four `NodeAction` implementations: analyze, advise,
+  human decision, apply decision).
+- `service` - `AdvisorService` (+ rule-based/LLM implementations), `MonitoredJourney` /
+  `MonitoredJourneyRegistry`, `DelayMonitorService` (polling + the demo-safety "simulate delay"
+  trigger), `WorkflowOrchestrationService` (the Vaadin ↔ langgraph4j bridge).
+- `ui` - `MainView` + `JourneySearchPanel` / `JourneyResultsGrid` / `MonitoringPanel`.
+- `config` - `AppShellConfig` (`@Push`), `RestClientConfig`, `AsyncConfig`, `BahnDemoProperties`.
+
+See [DEMO_PLAN.md](DEMO_PLAN.md) for the full architecture write-up, including implementation
+notes and gotchas encountered while building this (serialization requirements for the
+`MemorySaver` checkpointer, Vaadin component scoping, advisor bean resolution, and API timeouts).
