@@ -4,10 +4,7 @@ import dev.rabauer.bahndemo.workflow.node.AdvisorNode;
 import dev.rabauer.bahndemo.workflow.node.AnalyzeDelayNode;
 import dev.rabauer.bahndemo.workflow.node.ApplyDecisionNode;
 import dev.rabauer.bahndemo.workflow.node.HumanDecisionNode;
-import org.bsc.langgraph4j.CompileConfig;
-import org.bsc.langgraph4j.CompiledGraph;
-import org.bsc.langgraph4j.GraphStateException;
-import org.bsc.langgraph4j.StateGraph;
+import org.bsc.langgraph4j.*;
 import org.bsc.langgraph4j.checkpoint.BaseCheckpointSaver;
 import org.bsc.langgraph4j.checkpoint.MemorySaver;
 import org.springframework.context.annotation.Bean;
@@ -62,7 +59,12 @@ public class DelayWorkflowConfig {
                 .checkpointSaver(checkpointSaver)
                 .interruptBefore(NODE_HUMAN_DECISION)
                 .build();
-
+        final var mermaidGraph = graph.getGraph(GraphRepresentation.Type.MERMAID, "DelayWorkflowGraph", false);
+        System.out.printf("""
+                ==========================
+                %s
+                ==========================
+                """, mermaidGraph.content());
         return graph.compile(compileConfig);
     }
 }
