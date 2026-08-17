@@ -2,10 +2,7 @@ package dev.rabauer.bahndemo.workflow;
 
 import dev.rabauer.bahndemo.client.dto.JourneyDto;
 import org.bsc.langgraph4j.state.AgentState;
-import org.bsc.langgraph4j.state.Channel;
-import org.bsc.langgraph4j.state.Channels;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -14,15 +11,8 @@ import java.util.Optional;
  * State threaded through the delay-handling graph (see DelayWorkflowConfig). Every node reads a
  * subset of these keys and returns a partial map of updates, which langgraph4j merges into a new
  * state snapshot.
- *
- * "log" uses an appender channel so successive nodes accumulate timeline entries instead of each
- * overwriting the previous node's log line - every other key uses the default overwrite behavior.
  */
 public class DelayWorkflowState extends AgentState {
-
-    public static final Map<String, Channel<?>> SCHEMA = Map.of(
-            "log", Channels.appender(ArrayList::new)
-    );
 
     public DelayWorkflowState(Map<String, Object> initData) {
         super(initData);
@@ -48,7 +38,7 @@ public class DelayWorkflowState extends AgentState {
         return value("advisorRecommendation");
     }
 
-    /** The alternatives() index the advisor recommends, if any. */
+    /** The alternatives() index the advisor recommends, if any - see AdvisorService/AdvisorRecommendation. */
     public Optional<Integer> advisorRecommendedIndex() {
         return value("advisorRecommendedIndex");
     }
