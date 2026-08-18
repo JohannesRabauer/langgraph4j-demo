@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+bahn:
+  api:
+    base-url: https://v6.db.transport.rest
+    default-results: 5
+    # profile: dbnav   # optional, uncomment to pin the v6.db.transport.rest backend profile
+  delay:
+    threshold-seconds: 300
+    poll-interval-ms: 30000   # DB API rate limit is 100 req/min - stay well under it for one demo journey
+  advisor:
+    enabled: false            # flip to true (docker-compose.yml already does) to demo the Ollama-backed LLM advisor
+
+# Autoconfigured by spring-ai-starter-model-ollama. Defaults point at a local Ollama install; docker-compose.yml
+# overrides both via SPRING_AI_OLLAMA_BASE_URL / SPRING_AI_OLLAMA_CHAT_OPTIONS_MODEL env vars.
+spring:
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: llama3.2

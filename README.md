@@ -2,20 +2,45 @@
 
 [![Watch the YouTube session](https://img.youtube.com/vi/bLN1iiTlcLU/maxresdefault.jpg)](https://youtube.com/live/bLN1iiTlcLU)
 
-Spring Boot + Vaadin demo of a Deutsche Bahn delay-monitoring workflow built with
-[langgraph4j](https://github.com/langgraph4j/langgraph4j), including a human-in-the-loop pause for
-deciding what to do about a delay. Built live on stream at
+Spring Boot + Vaadin demo of a Deutsche Bahn delay-monitoring workflow, including a
+human-in-the-loop pause for deciding what to do about a delay. Being rebuilt on
+[langgraph4j](https://github.com/langgraph4j/langgraph4j) live on stream at
 https://youtube.com/live/bLN1iiTlcLU.
 
 ## What it does
 
 You search for a Deutsche Bahn connection, pick one to monitor, and the app polls it for delays in
-the background. Once a delay crosses a configurable threshold, a **langgraph4j** `StateGraph`
-kicks in: it looks for alternative connections, optionally asks a local LLM to recommend one, and
-then **pauses the graph and waits for a human decision** in the browser before finalizing an
-outcome. langgraph4j's checkpointing and interrupt/resume mechanics are the centerpiece of the demo.
+the background. Once a delay crosses a configurable threshold, a workflow kicks in: it looks for
+alternative connections, asks an advisor (rule-based, or a local LLM) to recommend one, and then
+**pauses and waits for a human decision** in the browser before finalizing an outcome.
 
-## Workflow graph
+**This is the pre-stream starting point**: that workflow exists today as a plain, hand-rolled Java
+method chain in `WorkflowOrchestrationService` - no langgraph4j involved yet. The stream's job is to
+replace it with a real **langgraph4j** `StateGraph`, with `CompiledGraph`, checkpointing, and
+`interruptBefore`/resume mechanics, without changing anything the UI depends on. See
+[DEMO_PLAN.md](DEMO_PLAN.md) for the exact before/after and the implementation order.
+
+## Workflow (as it stands today, pre-stream)
+
+```
+search (client.DbApiClient) -> pick a journey -> monitor it (service.DelayMonitorService,
+@Scheduled polling or the "Simulate delay" button) -> threshold breach ->
+service.WorkflowOrchestrationService.startWorkflow(journey), on workflowExecutor:
+  findAlternatives(journey) via dbApiClient.searchJourneys(...)
+  -> advisorService.recommend(...)
+  -> stash a DelayWorkflowState snapshot in an in-memory Map<journeyId, state>
+  -> push it to the browser (Vaadin server push) as "paused, your decision is needed"
+-> user picks a decision -> resumeWithDecision(journeyId, decision, index):
+  look up the stashed state -> resolve the outcome -> push the final state to the browser
+```
+
+No graph, no checkpointer, no nodes - `WorkflowOrchestrationService`'s Javadoc spells out exactly
+what a real langgraph4j graph replaces this with.
+
+## Target workflow (what gets built live on stream)
+
+The plain method chain above becomes a langgraph4j `StateGraph` with four nodes and a pause before
+`humanDecision`:
 
 ```mermaid
 flowchart TD
@@ -35,24 +60,12 @@ flowchart TD
 	classDef __END__ fill:black,stroke-width:1px,font-size:xx-small;
 ```
 
-The graph halts before `humanDecision` (`interruptBefore("humanDecision")`), pushes the paused
-state to the browser via Vaadin server push, and resumes with `updateState(...)` +
-`GraphInput.resume()` once the user picks a decision. This uses langgraph4j's documented **static
+The graph will halt before `humanDecision` (`interruptBefore("humanDecision")`), push the paused
+state to the browser via Vaadin server push, and resume with `updateState(...)` +
+`GraphInput.resume()` once the user picks a decision - langgraph4j's documented **static
 `interruptBefore(nodeName)`**, not a dynamic `interrupt()` function, which isn't present in
-langgraph4j-core 1.8.24. See [DIAGRAM.md](DIAGRAM.md) for how to regenerate this diagram straight
-from the compiled graph.
+langgraph4j-core 1.8.24:
 
-End-to-end flow:
-
-```
-search (client.DbApiClient) -> pick a journey -> monitor it (service.DelayMonitorService,
-@Scheduled polling or the "Simulate delay" button) -> threshold breach ->
-service.WorkflowOrchestrationService starts a langgraph4j run (workflow.DelayWorkflowConfig) ->
-analyzeDelay -> advisor -> [graph halts: interruptBefore("humanDecision")] ->
-push paused state to the browser (Vaadin server push) -> user picks a decision ->
-graph.updateState(...) + graph.stream(GraphInput.resume(), config) ->
-humanDecision -> applyDecision -> END -> push final outcome to the browser
-```
 ```mermaid
 sequenceDiagram
     autonumber
@@ -83,16 +96,16 @@ sequenceDiagram
     Note over Monitor: Threshold breach detected
     Monitor->>Orchestrator: Trigger workflow execution
     Orchestrator->>Workflow: Start langgraph4j run
-    
+
     %% Step 4: Automated Graph Execution
     activate Workflow
     Workflow->>Workflow: analyzeDelay
     Workflow->>Workflow: advisor
-    
+
     Note over Workflow: Interrupt hit:<br/>interruptBefore("humanDecision")
     Workflow-->>Orchestrator: Pause workflow execution
     deactivate Workflow
-    
+
     Orchestrator->>Browser: Push paused state (Vaadin Server Push)
     Browser-->>User: Display decision prompt
 
@@ -102,7 +115,7 @@ sequenceDiagram
     Orchestrator->>Workflow: graph.updateState(...)
     Note over Workflow: Resume with human decision
     Orchestrator->>Workflow: graph.stream(GraphInput.resume(), config)
-    
+
     activate Workflow
     Workflow->>Workflow: humanDecision
     Workflow->>Workflow: applyDecision
@@ -113,11 +126,15 @@ sequenceDiagram
     Browser-->>User: Display final outcome
 ```
 
+The pre-stream version today collapses "Automated Graph Execution" and "Human Decision & Graph
+Resume" into two plain method calls (`startWorkflow`/`resumeWithDecision`) instead - same
+observable behavior in the browser, no graph underneath yet.
+
 ## Tech stack
 
 - Spring Boot 4.1.0 + Vaadin 25.2.6 (Flow) + Java 21.
-- [`org.bsc.langgraph4j:langgraph4j-core:1.8.24`](https://github.com/langgraph4j/langgraph4j) for
-  the workflow engine.
+- [`org.bsc.langgraph4j:langgraph4j-core:1.8.24`](https://github.com/langgraph4j/langgraph4j) is
+  already in `pom.xml` for the workflow engine, but no code uses it yet - that's the stream's job.
 - [v6.db.transport.rest](https://v6.db.transport.rest/) for Deutsche Bahn data - free, unofficial,
   no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute. `DbApiClient` falls back to
   a small hardcoded offline dataset on any failure (timeout, 503, ...) so the demo stays reliable
@@ -170,12 +187,13 @@ variables (as `docker-compose.yml` does):
 Base package: `dev.rabauer.bahndemo`
 
 - `client` - `DbApiClient` + DTOs for v6.db.transport.rest.
-- `workflow` - `DelayWorkflowState` (the graph's state), `DelayWorkflowConfig` (graph wiring),
-  `HumanDecision` enum, `workflow.node.*` (the four `NodeAction` implementations: analyze, advise,
-  human decision, apply decision).
+- `workflow` - `DelayWorkflowState` (plain, immutable state snapshot - not yet a langgraph4j
+  `AgentState`), `HumanDecision` enum. `DelayWorkflowConfig` and `workflow.node.*` don't exist yet -
+  built live on stream.
 - `service` - `AdvisorService` (+ rule-based/LLM implementations), `MonitoredJourney` /
   `MonitoredJourneyRegistry`, `DelayMonitorService` (polling + the demo-safety "simulate delay"
-  trigger), `WorkflowOrchestrationService` (the Vaadin ↔ langgraph4j bridge).
+  trigger), `WorkflowOrchestrationService` (the hand-rolled orchestration described above - becomes
+  the Vaadin ↔ langgraph4j bridge on stream).
 - `ui` - `MainView` + `JourneySearchPanel` / `JourneyResultsGrid` / `MonitoringPanel`.
 - `config` - `AppShellConfig` (`@Push`), `RestClientConfig`, `AsyncConfig`, `BahnDemoProperties`.
 

@@ -1,0 +1,10 @@
+target/
+src/main/frontend/
+node_modules/
+package-lock.json
+vite.generated.ts
+tsconfig.generated.json
+types.generated.d.ts
+*.log
+.idea/
+*.iml

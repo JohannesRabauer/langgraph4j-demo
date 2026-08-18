@@ -1,0 +1,7 @@
+target/
+.git/
+.idea/
+*.iml
+src/main/frontend/
+node_modules/
+*.log
