@@ -53,6 +53,65 @@ push paused state to the browser (Vaadin server push) -> user picks a decision -
 graph.updateState(...) + graph.stream(GraphInput.resume(), config) ->
 humanDecision -> applyDecision -> END -> push final outcome to the browser
 ```
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Browser as Browser (Vaadin UI)
+    participant DbApi as client.DbApiClient
+    participant Monitor as service.DelayMonitorService
+    participant Orchestrator as service.WorkflowOrchestrationService
+    participant Workflow as workflow.DelayWorkflowConfig (langgraph4j)
+
+    %% Step 1: Search & Pick Journey
+    User->>Browser: Search for journeys
+    Browser->>DbApi: search()
+    DbApi-->>Browser: Journey results
+    User->>Browser: Pick a journey
+
+    %% Step 2: Monitoring & Delay Simulation
+    alt Scheduled Polling
+        loop @Scheduled
+            Monitor->>Monitor: Poll journey status
+        end
+    else Manual Simulation
+        User->>Browser: Click "Simulate delay"
+        Browser->>Monitor: Trigger delay
+    end
+
+    %% Step 3: Threshold Breach & Workflow Trigger
+    Note over Monitor: Threshold breach detected
+    Monitor->>Orchestrator: Trigger workflow execution
+    Orchestrator->>Workflow: Start langgraph4j run
+    
+    %% Step 4: Automated Graph Execution
+    activate Workflow
+    Workflow->>Workflow: analyzeDelay
+    Workflow->>Workflow: advisor
+    
+    Note over Workflow: Interrupt hit:<br/>interruptBefore("humanDecision")
+    Workflow-->>Orchestrator: Pause workflow execution
+    deactivate Workflow
+    
+    Orchestrator->>Browser: Push paused state (Vaadin Server Push)
+    Browser-->>User: Display decision prompt
+
+    %% Step 5: Human Decision & Graph Resume
+    User->>Browser: Pick a decision
+    Browser->>Orchestrator: Submit decision
+    Orchestrator->>Workflow: graph.updateState(...)
+    Note over Workflow: Resume with human decision
+    Orchestrator->>Workflow: graph.stream(GraphInput.resume(), config)
+    
+    activate Workflow
+    Workflow->>Workflow: humanDecision
+    Workflow->>Workflow: applyDecision
+    Workflow-->>Orchestrator: Workflow complete (END)
+    deactivate Workflow
+
+    Orchestrator->>Browser: Push final outcome (Vaadin Server Push)
+    Browser-->>User: Display final outcome
+```
 
 ## Tech stack
 
