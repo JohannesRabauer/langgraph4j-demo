@@ -33,8 +33,9 @@ public class AnalyzeDelayNode implements NodeAction<DelayWorkflowState> {
         String fromId = original.firstLeg().origin().id();
         String toId = original.lastLeg().destination().id();
 
+        String originalTripIdentity = DbApiClient.tripIdentity(original.refreshToken());
         List<JourneyDto> alternatives = dbApiClient.searchJourneys(fromId, toId, Instant.now()).stream()
-                .filter(journey -> !journey.refreshToken().equals(original.refreshToken()))
+                .filter(journey -> !DbApiClient.tripIdentity(journey.refreshToken()).equals(originalTripIdentity))
                 .limit(3)
                 .toList();
 
