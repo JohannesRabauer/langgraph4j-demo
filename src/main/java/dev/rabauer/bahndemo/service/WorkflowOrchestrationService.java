@@ -146,6 +146,11 @@ public class WorkflowOrchestrationService {
             // TODO(stream): log and surface the error via journey.getUiCallback()
             return failedFuture(e);
         }
+        String originalTripIdentity = DbApiClient.tripIdentity(original.refreshToken());
+        return dbApiClient.searchJourneys(firstLeg.origin().id(), lastLeg.destination().id(), Instant.now()).stream()
+                .filter(candidate -> !DbApiClient.tripIdentity(candidate.refreshToken()).equals(originalTripIdentity))
+                .toList();
+
     }
 
     private void publishSnapshot(MonitoredJourney journey, RunnableConfig config, DelayWorkflowState state) {

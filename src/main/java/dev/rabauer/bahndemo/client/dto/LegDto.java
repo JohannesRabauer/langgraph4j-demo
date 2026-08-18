@@ -6,9 +6,10 @@ import java.io.Serializable;
 import java.time.Instant;
 
 /**
- * One leg of a journey. {@code departureDelay}/{@code arrivalDelay} are in seconds, as returned
- * by v6.db.transport.rest (null when no realtime data is available). The actual API returns many
- * more fields (remarks, polyline, price, ...) which are intentionally ignored here.
+ * One leg of a journey - DbApiClient's internal model, built from api.transitous.org (MOTIS)
+ * responses. {@code departureDelay}/{@code arrivalDelay} are in seconds, computed from that API's
+ * scheduled vs. realtime times (null when there's no delay or no realtime data). MOTIS returns many
+ * more fields (polyline, intermediate stops, fares, ...) which are intentionally ignored here.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record LegDto(

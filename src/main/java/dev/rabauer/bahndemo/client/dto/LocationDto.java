@@ -5,8 +5,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.io.Serializable;
 
 /**
- * A station/stop/address as returned by v6.db.transport.rest's /locations endpoint (and nested
- * inside legs as origin/destination). Coordinates are nested under "location", not top-level.
+ * A station/stop/address - DbApiClient's internal model, built from api.transitous.org (MOTIS)
+ * geocode results and itinerary legs (both nested inside journeys as origin/destination).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record LocationDto(

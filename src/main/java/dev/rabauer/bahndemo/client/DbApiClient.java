@@ -1,8 +1,8 @@
 package dev.rabauer.bahndemo.client;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import dev.rabauer.bahndemo.config.BahnDemoProperties;
 import dev.rabauer.bahndemo.client.dto.JourneyDto;
-import dev.rabauer.bahndemo.client.dto.JourneyEnvelope;
-import dev.rabauer.bahndemo.client.dto.JourneysResponse;
 import dev.rabauer.bahndemo.client.dto.LegDto;
 import dev.rabauer.bahndemo.client.dto.LineDto;
 import dev.rabauer.bahndemo.client.dto.LocationDto;
@@ -14,19 +14,25 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Thin client for the public, unauthenticated v6.db.transport.rest API (backed by db-vendo-client).
- * Rate limit: 100 requests/minute - keep polling intervals well under that.
+ * Thin client for the public, unauthenticated api.transitous.org API (a MOTIS instance, aggregating
+ * GTFS/GTFS-RT feeds across Europe, including Deutsche Bahn's own DELFI feed). Deutsche Bahn's own
+ * vendo/movas backend (which powers v6.db.transport.rest via db-vendo-client) started blocking
+ * third-party clients via Akamai TLS fingerprinting in 2026 - see
+ * https://github.com/public-transport/db-vendo-client/issues/46 - so this app talks to transitous.org
+ * instead, which is unaffected since it ingests DELFI's published GTFS feed rather than scraping DB's
+ * app backend.
  *
  * Every call falls back to a hardcoded offline dataset on failure, so the demo (search, monitoring,
- * delay simulation) keeps working even if the live API is unreachable or rate-limited - a real
- * condition observed for hours at a time while building this client, not a hypothetical one. The
- * dataset spans several countries (not just Germany) so cross-border searches still return results
- * while the live API is down.
+ * delay simulation) keeps working even if the live API is unreachable.
  */
 @Component
 public class DbApiClient {
@@ -63,61 +69,102 @@ public class DbApiClient {
             .collect(Collectors.toMap(LocationDto::id, loc -> loc));
 
     private final RestClient restClient;
+    private final BahnDemoProperties properties;
 
-    public DbApiClient(RestClient dbApiRestClient) {
+    public DbApiClient(RestClient dbApiRestClient, BahnDemoProperties properties) {
         this.restClient = dbApiRestClient;
+        this.properties = properties;
     }
 
-    /** GET /locations?query=... - station/address autocomplete. */
+    /** GET /api/v1/geocode?text=... - station/address autocomplete. */
     public List<LocationDto> searchLocations(String query) {
         try {
-            LocationDto[] result = restClient.get()
-                    .uri(uriBuilder -> uriBuilder.path("/locations")
-                            .queryParam("query", query)
-                            .queryParam("results", 5)
+            MotisGeocodeResult[] results = restClient.get()
+                    .uri(uriBuilder -> uriBuilder.path("/api/v1/geocode")
+                            .queryParam("text", query)
                             .build())
                     .retrieve()
-                    .body(LocationDto[].class);
-            return result == null ? List.of() : List.of(result);
+                    .body(MotisGeocodeResult[].class);
+            return results == null ? List.of() : Arrays.stream(results)
+                    .filter(r -> r.lat() != null && r.lon() != null)
+                    .map(DbApiClient::toLocationDto)
+                    .limit(properties.api().defaultResults())
+                    .toList();
         } catch (RestClientException e) {
-            log.warn("v6.db.transport.rest /locations unavailable ({}), using offline fallback data", e.toString());
+            log.warn("api.transitous.org /api/v1/geocode unavailable ({}), using offline fallback data", e.toString());
             return fallbackLocations(query);
         }
     }
 
-    /** GET /journeys?from=&to=&departure= - connection search between two stations. */
+    /** GET /api/v1/plan?fromPlace=&toPlace=&time= - connection search between two stations/stops. */
     public List<JourneyDto> searchJourneys(String fromId, String toId, Instant when) {
+        // MOTIS's "time" parser silently mis-parses Instant.toString()'s nanosecond-precision
+        // fractional seconds (falls back to ~midnight instead of erroring) - truncate to millis,
+        // which it parses correctly.
+        Instant departure = (when != null ? when : Instant.now()).truncatedTo(ChronoUnit.MILLIS);
         try {
-            JourneysResponse response = restClient.get()
-                    .uri(uriBuilder -> uriBuilder.path("/journeys")
-                            .queryParam("from", fromId)
-                            .queryParam("to", toId)
-                            .queryParam("departure", when)
+            MotisPlanResponse response = restClient.get()
+                    .uri(uriBuilder -> uriBuilder.path("/api/v1/plan")
+                            .queryParam("fromPlace", fromId)
+                            .queryParam("toPlace", toId)
+                            .queryParam("time", departure)
+                            .queryParam("numItineraries", properties.api().defaultResults())
                             .build())
                     .retrieve()
-                    .body(JourneysResponse.class);
-            return response == null || response.journeys() == null ? List.of() : response.journeys();
+                    .body(MotisPlanResponse.class);
+            return response == null || response.itineraries() == null ? List.of()
+                    : response.itineraries().stream()
+                            .map(itinerary -> toJourneyDto(itinerary, fromId, toId, departure))
+                            .toList();
         } catch (RestClientException e) {
-            log.warn("v6.db.transport.rest /journeys unavailable ({}), using offline fallback data", e.toString());
+            log.warn("api.transitous.org /api/v1/plan unavailable ({}), using offline fallback data", e.toString());
             return fallbackJourneys(fromId, toId, when);
         }
     }
 
-    /** GET /journeys/{refreshToken} - re-fetch realtime data (delays) for a previously returned journey. */
+    /**
+     * Re-fetches realtime data (delays) for a previously returned journey. transitous.org has no
+     * single-trip refresh endpoint, so this re-runs the same search that produced the journey and
+     * picks out the itinerary for the same trip - which naturally reflects the latest realtime data.
+     */
     public JourneyDto refreshJourney(String refreshToken) {
-        if (refreshToken != null && refreshToken.startsWith("offline-")) {
-            return fallbackRefreshedJourney(refreshToken);
-        }
-        try {
-            JourneyEnvelope envelope = restClient.get()
-                    .uri("/journeys/{refreshToken}", refreshToken)
-                    .retrieve()
-                    .body(JourneyEnvelope.class);
-            return envelope == null ? null : envelope.journey();
-        } catch (RestClientException e) {
-            log.warn("v6.db.transport.rest /journeys/{} unavailable ({})", refreshToken, e.toString());
+        if (refreshToken == null) {
             return null;
         }
+        if (refreshToken.startsWith("offline-")) {
+            return fallbackRefreshedJourney(refreshToken);
+        }
+        String[] parts = refreshToken.split("\\|", 5);
+        if (parts.length != 5 || !"motis".equals(parts[0])) {
+            log.warn("Unrecognized refresh token format: {}", refreshToken);
+            return null;
+        }
+        String fromId = parts[1];
+        String toId = parts[2];
+        Instant when = Instant.parse(parts[3]);
+        return searchJourneys(fromId, toId, when).stream()
+                .filter(journey -> journey.refreshToken().equals(refreshToken))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Identifies "the same physical trip" across two searches, unlike raw refreshToken equality:
+     * a motis refreshToken embeds the search's departure time, so the same trip found again by a
+     * later search (e.g. when looking for alternatives to a delayed journey) gets a different
+     * refreshToken even though it's the same train. Callers that need to recognize "this is the
+     * journey I already have" (not just "this refreshToken string matches") should compare this
+     * instead of the refreshToken itself.
+     */
+    public static String tripIdentity(String refreshToken) {
+        if (refreshToken == null) {
+            return null;
+        }
+        if (!refreshToken.startsWith("motis|")) {
+            return refreshToken;
+        }
+        String[] parts = refreshToken.split("\\|", 5);
+        return parts.length == 5 ? parts[4] : refreshToken;
     }
 
     private List<LocationDto> fallbackLocations(String query) {
@@ -167,5 +214,107 @@ public class DbApiClient {
 
     private static LocationDto location(String id, String name, double latitude, double longitude) {
         return new LocationDto("station", id, name, new LocationDto.Coordinates(latitude, longitude));
+    }
+
+    /**
+     * geocode returns both STOP results (proper feed-qualified stop IDs, valid as fromPlace/toPlace)
+     * and PLACE results (generic city/address matches with an OSM-node-style id that /api/v1/plan
+     * rejects with "unknown feed id"). For anything but a STOP, use "lat,lon" instead - which
+     * /api/v1/plan accepts directly and MOTIS resolves to the nearest stop itself.
+     */
+    private static LocationDto toLocationDto(MotisGeocodeResult result) {
+        String id = "STOP".equals(result.type()) ? result.id() : (result.lat() + "," + result.lon());
+        return new LocationDto(result.type(), id, result.name(),
+                new LocationDto.Coordinates(result.lat(), result.lon()));
+    }
+
+    private static JourneyDto toJourneyDto(MotisItinerary itinerary, String fromId, String toId, Instant when) {
+        List<LegDto> legs = itinerary.legs() == null ? List.of()
+                : itinerary.legs().stream().map(DbApiClient::toLegDto).toList();
+        String tripId = itinerary.legs() == null ? null : itinerary.legs().stream()
+                .map(MotisLeg::tripId)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(itinerary.id());
+        String refreshToken = String.join("|", "motis", fromId, toId, when.toString(), String.valueOf(tripId));
+        return new JourneyDto(refreshToken, legs);
+    }
+
+    private static LegDto toLegDto(MotisLeg leg) {
+        boolean walking = "WALK".equals(leg.mode());
+        LocationDto origin = toLocationDto(leg.from());
+        LocationDto destination = toLocationDto(leg.to());
+        LineDto line = walking ? null : new LineDto(leg.displayName(), toProduct(leg.mode()));
+        return new LegDto(
+                origin, destination,
+                leg.startTime(), leg.scheduledStartTime(), delaySeconds(leg.scheduledStartTime(), leg.startTime()),
+                leg.endTime(), leg.scheduledEndTime(), delaySeconds(leg.scheduledEndTime(), leg.endTime()),
+                line, Boolean.TRUE.equals(leg.cancelled()), walking);
+    }
+
+    private static LocationDto toLocationDto(MotisPlace place) {
+        if (place == null) {
+            return null;
+        }
+        String id = place.stopId() != null ? place.stopId() : place.name();
+        LocationDto.Coordinates coordinates = place.lat() != null && place.lon() != null
+                ? new LocationDto.Coordinates(place.lat(), place.lon()) : null;
+        return new LocationDto(place.stopId() != null ? "stop" : "address", id, place.name(), coordinates);
+    }
+
+    private static Integer delaySeconds(Instant planned, Instant actual) {
+        if (planned == null || actual == null) {
+            return null;
+        }
+        long seconds = Duration.between(planned, actual).getSeconds();
+        return seconds > 0 ? (int) seconds : null;
+    }
+
+    private static String toProduct(String mode) {
+        if (mode == null) {
+            return "unknown";
+        }
+        return switch (mode) {
+            case "HIGHSPEED_RAIL" -> "nationalExpress";
+            case "LONG_DISTANCE", "RAIL" -> "national";
+            case "REGIONAL_RAIL", "REGIONAL_FAST_RAIL" -> "regional";
+            case "SUBURBAN" -> "suburban";
+            case "SUBWAY" -> "subway";
+            case "TRAM" -> "tram";
+            case "BUS", "COACH" -> "bus";
+            case "FERRY" -> "ferry";
+            default -> mode.toLowerCase(Locale.ROOT);
+        };
+    }
+
+    /** Flat geocode result: {"type":"STOP","id":"...","name":"...","lat":...,"lon":...}. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MotisGeocodeResult(String type, String id, String name, Double lat, Double lon) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MotisPlanResponse(List<MotisItinerary> itineraries) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MotisItinerary(String id, List<MotisLeg> legs) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MotisLeg(
+            String mode,
+            MotisPlace from,
+            MotisPlace to,
+            Instant startTime,
+            Instant endTime,
+            Instant scheduledStartTime,
+            Instant scheduledEndTime,
+            String displayName,
+            String tripId,
+            Boolean cancelled) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MotisPlace(String name, String stopId, Double lat, Double lon) {
     }
 }

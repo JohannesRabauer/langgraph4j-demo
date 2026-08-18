@@ -22,13 +22,18 @@ interrupt/resume mechanics are the centerpiece.
 
 - Spring Boot 4.1.0 + Vaadin 25.2.6 (Flow) + Java 21. Vaadin 25 (not 24) because Vaadin 24.x moved
   into paid Extended Maintenance and refuses to start without a license - re-check
-  https://vaadin.com/docs/latest/compatibility if that's changed again.
+  https://vaadin.com/docs/latest/compatibility if that's changed again by stream time.
 - `org.bsc.langgraph4j:langgraph4j-core:1.8.24` for the workflow engine.
-- [v6.db.transport.rest](https://v6.db.transport.rest/) for Deutsche Bahn data - free, unofficial,
-  no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute. `DbApiClient` falls back to a
-  ~20-station offline dataset (spanning Germany, Italy, Austria, Switzerland, France, the
-  Netherlands) on any failure (timeout, 503, ...), since that live API has been observed down for
-  hours at a time.
+- [api.transitous.org](https://transitous.org/) for journey data - a public MOTIS instance
+  aggregating GTFS/GTFS-RT feeds across Europe (including Deutsche Bahn's own DELFI feed), free, no
+  API key. Previously this used `v6.db.transport.rest` (`db-vendo-client`), but Deutsche Bahn's own
+  backend started blocking that whole ecosystem via TLS fingerprinting in 2026 - see
+  [DbApiClient](src/main/java/dev/rabauer/bahndemo/client/DbApiClient.java) and the
+  [upstream issue](https://github.com/public-transport/db-vendo-client/issues/46). `DbApiClient`
+  falls back to a ~20-station offline dataset (spanning Germany, Italy, Austria, Switzerland,
+  France, the Netherlands) on any failure (timeout, 503, ...) - worth mentioning live in case
+  search looks "wrong": it's the fallback, not a bug.
+
 - LLM advisor via **Spring AI's Ollama integration** (`spring-ai-starter-model-ollama`, model
   `llama3.2`, GPU-accelerated in `docker-compose.yml`), gated behind `bahn.advisor.enabled` so the
   app builds and runs standalone with zero external dependencies.
@@ -54,9 +59,9 @@ key is overwrite, which is what you want for e.g. `outcome`.
 
 Package layout (base package `dev.rabauer.bahndemo`):
 
-- `client` - `DbApiClient` + DTOs for v6.db.transport.rest. DTOs (`JourneyDto`, `LegDto`, `LineDto`,
-  `LocationDto`) implement `Serializable`, required because langgraph4j's `MemorySaver` checkpointer
-  serializes the whole graph state via `ObjectOutputStream` on every step.
+- `client` - `DbApiClient` + DTOs for api.transitous.org (MOTIS). DTOs (`JourneyDto`, `LegDto`,
+  `LineDto`, `LocationDto`) implement `Serializable`, required because langgraph4j's `MemorySaver`
+  checkpointer serializes the whole graph state via `ObjectOutputStream` on every step.
 - `workflow` - `DelayWorkflowState` (extends langgraph4j's `AgentState`), `DelayWorkflowConfig`
   (graph wiring: nodes, edges, `MemorySaver` bean, `interruptBefore`), `HumanDecision` enum,
   `workflow.node.*` (the four `NodeAction<DelayWorkflowState>` implementations).
@@ -64,13 +69,14 @@ Package layout (base package `dev.rabauer.bahndemo`):
   `AdvisorRecommendation(recommendedIndex, rationale)` pointing at a specific alternative;
   `LlmAdvisorService` falls back to the rule-based one on any Ollama failure),
   `MonitoredJourney`/`MonitoredJourneyRegistry`, `DelayMonitorService` (polling + the "Simulate a
-  delay" demo trigger), `WorkflowOrchestrationService` (the Vaadin ↔ langgraph4j bridge - drives the
-  compiled graph via `CompletableFuture`-based streaming instead of blocking a thread per run).
-- `ui` - `MainView` + `JourneySearchPanel`/`JourneyResultsGrid`/`MonitoringPanel` - unchanged from
-  `main`; `MonitoringPanel.render(DelayWorkflowState)` only depends on the state's accessors, not on
-  how the state got produced, so nothing here needed to change when the graph was wired in.
+  delay" demo trigger), `WorkflowOrchestrationService` (the Vaadin ↔ langgraph4j bridge - drives
+  the compiled graph via `CompletableFuture`-based streaming instead of blocking a thread per run).
+- `ui` - `MainView` + `JourneySearchPanel`/`JourneyResultsGrid`/`MonitoringPanel`, including the
+  paused-decision UI. `MonitoringPanel.render(DelayWorkflowState)` only depends on the state's
+  accessors, so it stayed unchanged when the real graph replaced the primitive orchestration.
 - `config` - `AppShellConfig` (`@Push` + the Aura theme `@StyleSheet` - required together),
   `RestClientConfig` (3s timeout), `AsyncConfig` (`workflowExecutor` bean), `BahnDemoProperties`.
+
 
 ## Notable things found while implementing
 
