@@ -27,11 +27,16 @@ interrupt/resume mechanics as the centerpiece.
   https://vaadin.com/docs/latest/compatibility if that's changed again by stream time.
 - `org.bsc.langgraph4j:langgraph4j-core:1.8.24` already in `pom.xml` for the workflow engine - not
   used by any code yet, that's the stream's job.
-- [v6.db.transport.rest](https://v6.db.transport.rest/) for Deutsche Bahn data - free, unofficial,
-  no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute. `DbApiClient` falls back to a
-  ~20-station offline dataset (spanning Germany, Italy, Austria, Switzerland, France, the
-  Netherlands) on any failure (timeout, 503, ...), since that live API has been observed down for
-  hours at a time - worth mentioning live in case search looks "wrong": it's the fallback, not a bug.
+- [api.transitous.org](https://transitous.org/) for journey data - a public MOTIS instance
+  aggregating GTFS/GTFS-RT feeds across Europe (including Deutsche Bahn's own DELFI feed), free, no
+  API key. Previously this used `v6.db.transport.rest` (`db-vendo-client`), but Deutsche Bahn's own
+  backend started blocking that whole ecosystem via TLS fingerprinting in 2026 - see
+  [DbApiClient](src/main/java/dev/rabauer/bahndemo/client/DbApiClient.java) and the
+  [upstream issue](https://github.com/public-transport/db-vendo-client/issues/46) - worth mentioning
+  live if anyone asks why it's not the "obvious" DB API. `DbApiClient` falls back to a ~20-station
+  offline dataset (spanning Germany, Italy, Austria, Switzerland, France, the Netherlands) on any
+  failure (timeout, 503, ...) - worth mentioning live in case search looks "wrong": it's the
+  fallback, not a bug.
 - LLM advisor via **Spring AI's Ollama integration** (`spring-ai-starter-model-ollama`, model
   `llama3.2`, GPU-accelerated in `docker-compose.yml`), gated behind `bahn.advisor.enabled` so the
   app builds and runs standalone with zero external dependencies.
@@ -58,7 +63,7 @@ state.
 
 Package layout (base package `dev.rabauer.bahndemo`):
 
-- `client` - `DbApiClient` + DTOs for v6.db.transport.rest. **Fully implemented**, including the
+- `client` - `DbApiClient` + DTOs for api.transitous.org (MOTIS). **Fully implemented**, including the
   offline fallback. DTOs (`JourneyDto`, `LegDto`, `LineDto`, `LocationDto`) already implement
   `Serializable` - needed once langgraph4j's `MemorySaver` checkpoints state via `ObjectOutputStream`.
 - `workflow` - `DelayWorkflowState` (plain state snapshot, **fully implemented** as a primitive

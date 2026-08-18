@@ -3,9 +3,10 @@ server:
 
 bahn:
   api:
-    base-url: https://v6.db.transport.rest
-    default-results: 5
-    # profile: dbnav   # optional, uncomment to pin the v6.db.transport.rest backend profile
+    # MOTIS instance aggregating DELFI's GTFS feed (incl. Deutsche Bahn) - see DbApiClient for why
+    # this isn't v6.db.transport.rest anymore.
+    base-url: https://api.transitous.org
+    default-results: 10
   delay:
     threshold-seconds: 300
     poll-interval-ms: 30000   # DB API rate limit is 100 req/min - stay well under it for one demo journey

@@ -135,10 +135,14 @@ observable behavior in the browser, no graph underneath yet.
 - Spring Boot 4.1.0 + Vaadin 25.2.6 (Flow) + Java 21.
 - [`org.bsc.langgraph4j:langgraph4j-core:1.8.24`](https://github.com/langgraph4j/langgraph4j) is
   already in `pom.xml` for the workflow engine, but no code uses it yet - that's the stream's job.
-- [v6.db.transport.rest](https://v6.db.transport.rest/) for Deutsche Bahn data - free, unofficial,
-  no API key, wraps `db-vendo-client`. Rate limit: 100 requests/minute. `DbApiClient` falls back to
-  a small hardcoded offline dataset on any failure (timeout, 503, ...) so the demo stays reliable
-  regardless of that API's availability.
+- [api.transitous.org](https://transitous.org/) for journey data - a public MOTIS instance
+  aggregating GTFS/GTFS-RT feeds across Europe (including Deutsche Bahn's own DELFI feed), free, no
+  API key. Previously this used `v6.db.transport.rest` (`db-vendo-client`), but Deutsche Bahn's own
+  backend started blocking that whole ecosystem via TLS fingerprinting in 2026 - see
+  [DbApiClient](src/main/java/dev/rabauer/bahndemo/client/DbApiClient.java) for details and the
+  [upstream issue](https://github.com/public-transport/db-vendo-client/issues/46). `DbApiClient`
+  falls back to a small hardcoded offline dataset on any failure (timeout, 503, ...) so the demo
+  stays reliable regardless of that API's availability.
 - Optional LLM advisor node via **Spring AI's Ollama integration**
   (`spring-ai-starter-model-ollama`, model `llama3.2`), gated behind `bahn.advisor.enabled` so the
   app builds and runs with zero external dependencies by default. `docker-compose.yml` runs Ollama
@@ -174,10 +178,10 @@ variables (as `docker-compose.yml` does):
 
 | Property | Default | Purpose |
 | --- | --- | --- |
-| `bahn.api.base-url` | `https://v6.db.transport.rest` | Deutsche Bahn journey API |
-| `bahn.api.default-results` | `5` | Number of connections returned per search |
+| `bahn.api.base-url` | `https://api.transitous.org` | Journey planning API (MOTIS) |
+| `bahn.api.default-results` | `10` | Number of connections/locations returned per search |
 | `bahn.delay.threshold-seconds` | `300` | Delay (in seconds) that triggers the workflow |
-| `bahn.delay.poll-interval-ms` | `30000` | Monitoring poll interval - stays well under the API's 100 req/min limit |
+| `bahn.delay.poll-interval-ms` | `30000` | Monitoring poll interval |
 | `bahn.advisor.enabled` | `false` | Enables the LLM-backed advisor node (needs Ollama reachable) |
 | `spring.ai.ollama.base-url` | `http://localhost:11434` | Ollama endpoint |
 | `spring.ai.ollama.chat.options.model` | `llama3.2` | Model used by the advisor node |
@@ -186,7 +190,7 @@ variables (as `docker-compose.yml` does):
 
 Base package: `dev.rabauer.bahndemo`
 
-- `client` - `DbApiClient` + DTOs for v6.db.transport.rest.
+- `client` - `DbApiClient` + DTOs for api.transitous.org (MOTIS).
 - `workflow` - `DelayWorkflowState` (plain, immutable state snapshot - not yet a langgraph4j
   `AgentState`), `HumanDecision` enum. `DelayWorkflowConfig` and `workflow.node.*` don't exist yet -
   built live on stream.
