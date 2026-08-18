@@ -48,12 +48,13 @@ flowchart TD
 	__END__((stop))
 	analyzeDelay("analyzeDelay")
 	advisor("advisor")
-	humanDecision("humanDecision")
+	humanDecision("humanDecision
+&lt;&lt;<I>interruption</I>>>")
 	applyDecision("applyDecision")
 	__START__:::__START__ --> analyzeDelay:::analyzeDelay
 	analyzeDelay:::analyzeDelay --> advisor:::advisor
 	advisor:::advisor --> humanDecision:::humanDecision
-	humanDecision:::humanDecision --> applyDecision:::applyDecision
+	humanDecision:::humanDecision -. resume .-> applyDecision:::applyDecision
 	applyDecision:::applyDecision --> __END__:::__END__
 
 	classDef __START__ fill:black,stroke-width:1px,font-size:xx-small;
@@ -63,11 +64,14 @@ flowchart TD
 The graph will halt before `humanDecision` (`interruptBefore("humanDecision")`), push the paused
 state to the browser via Vaadin server push, and resume with `updateState(...)` +
 `GraphInput.resume()` once the user picks a decision - langgraph4j's documented **static
-`interruptBefore(nodeName)`**, not a dynamic `interrupt()` function, which isn't present in
-langgraph4j-core 1.8.24:
+`interruptBefore(nodeName)`**, and  **dynamic `InterruptableAction.interrupt(nodeId,state,config)`** can be found [here](https://langgraph4j.github.io/langgraph4j/main/core/core-library/?h=interrupt#breakpoints-aka-interruptions) 
 
 ```mermaid
+---
+Sequence Diagram of Application
+---
 sequenceDiagram
+    title: Sequence Diagram of Application
     autonumber
     actor User
     participant Browser as Browser<br/>&lt;&lt;Vaadin UI>>
