@@ -57,11 +57,11 @@ humanDecision -> applyDecision -> END -> push final outcome to the browser
 sequenceDiagram
     autonumber
     actor User
-    participant Browser as Browser (Vaadin UI)
-    participant DbApi as client.DbApiClient
-    participant Monitor as service.DelayMonitorService
-    participant Orchestrator as service.WorkflowOrchestrationService
-    participant Workflow as workflow.DelayWorkflowConfig (langgraph4j)
+    participant Browser as Browser<br/>&lt;&lt;Vaadin UI>>
+    participant DbApi as client<br/>DbApiClient
+    participant Monitor as service<br/>DelayMonitorService
+    participant Orchestrator as service<br/>WorkflowOrchestrationService
+    participant Workflow as workflow<br/>&lt;&lt;LangGraph4j>>
 
     %% Step 1: Search & Pick Journey
     User->>Browser: Search for journeys
