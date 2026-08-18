@@ -48,12 +48,13 @@ flowchart TD
 	__END__((stop))
 	analyzeDelay("analyzeDelay")
 	advisor("advisor")
-	humanDecision("humanDecision")
+	humanDecision("humanDecision
+&lt;&lt;<I>interruption</I>>>")
 	applyDecision("applyDecision")
 	__START__:::__START__ --> analyzeDelay:::analyzeDelay
 	analyzeDelay:::analyzeDelay --> advisor:::advisor
 	advisor:::advisor --> humanDecision:::humanDecision
-	humanDecision:::humanDecision --> applyDecision:::applyDecision
+	humanDecision:::humanDecision -. resume .-> applyDecision:::applyDecision
 	applyDecision:::applyDecision --> __END__:::__END__
 
 	classDef __START__ fill:black,stroke-width:1px,font-size:xx-small;
