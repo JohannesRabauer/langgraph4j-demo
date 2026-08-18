@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -97,7 +98,10 @@ public class DbApiClient {
 
     /** GET /api/v1/plan?fromPlace=&toPlace=&time= - connection search between two stations/stops. */
     public List<JourneyDto> searchJourneys(String fromId, String toId, Instant when) {
-        Instant departure = when != null ? when : Instant.now();
+        // MOTIS's "time" parser silently mis-parses Instant.toString()'s nanosecond-precision
+        // fractional seconds (falls back to ~midnight instead of erroring) - truncate to millis,
+        // which it parses correctly.
+        Instant departure = (when != null ? when : Instant.now()).truncatedTo(ChronoUnit.MILLIS);
         try {
             MotisPlanResponse response = restClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/api/v1/plan")
@@ -142,6 +146,25 @@ public class DbApiClient {
                 .filter(journey -> journey.refreshToken().equals(refreshToken))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Identifies "the same physical trip" across two searches, unlike raw refreshToken equality:
+     * a motis refreshToken embeds the search's departure time, so the same trip found again by a
+     * later search (e.g. when looking for alternatives to a delayed journey) gets a different
+     * refreshToken even though it's the same train. Callers that need to recognize "this is the
+     * journey I already have" (not just "this refreshToken string matches") should compare this
+     * instead of the refreshToken itself.
+     */
+    public static String tripIdentity(String refreshToken) {
+        if (refreshToken == null) {
+            return null;
+        }
+        if (!refreshToken.startsWith("motis|")) {
+            return refreshToken;
+        }
+        String[] parts = refreshToken.split("\\|", 5);
+        return parts.length == 5 ? parts[4] : refreshToken;
     }
 
     private List<LocationDto> fallbackLocations(String query) {

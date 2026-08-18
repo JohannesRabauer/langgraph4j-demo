@@ -121,8 +121,9 @@ public class WorkflowOrchestrationService {
         if (firstLeg == null || lastLeg == null || firstLeg.origin() == null || lastLeg.destination() == null) {
             return List.of();
         }
+        String originalTripIdentity = DbApiClient.tripIdentity(original.refreshToken());
         return dbApiClient.searchJourneys(firstLeg.origin().id(), lastLeg.destination().id(), Instant.now()).stream()
-                .filter(candidate -> !candidate.refreshToken().equals(original.refreshToken()))
+                .filter(candidate -> !DbApiClient.tripIdentity(candidate.refreshToken()).equals(originalTripIdentity))
                 .toList();
     }
 
