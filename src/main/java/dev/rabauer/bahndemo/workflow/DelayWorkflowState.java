@@ -1,168 +1,92 @@
 package dev.rabauer.bahndemo.workflow;
 
 import dev.rabauer.bahndemo.client.dto.JourneyDto;
+import org.bsc.langgraph4j.state.AgentState;
+import org.bsc.langgraph4j.state.Channel;
+import org.bsc.langgraph4j.state.Channels;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
- * A snapshot of the delay-handling workflow for one journey, pushed to the UI after each step.
+ * Langgraph4j graph state for the delay-handling workflow.
  *
- * Plain, hand-rolled state - no checkpointing, no formal graph. It's the primitive stand-in for
- * what becomes a langgraph4j-managed graph state during the stream (see WorkflowOrchestrationService's
- * Javadoc). Kept immutable via toBuilder() so each published snapshot is a distinct value, mirroring
- * how a real graph state update produces a new state rather than mutating one in place.
+ * Extends {@link AgentState} so the compiled graph can checkpoint it via MemorySaver.
+ * The {@link #SCHEMA} registers a list-appender channel for {@code "log"} so each node's
+ * log line accumulates instead of overwriting, and plain base channels for every other key.
+ *
+ * Accessor signatures are kept identical to the original plain-class version so
+ * {@code MonitoringPanel} needs no changes.
  */
-public final class DelayWorkflowState {
+public class DelayWorkflowState extends AgentState {
 
-    private final String journeyId;
-    private final JourneyDto originalJourney;
-    private final Integer delaySeconds;
-    private final List<JourneyDto> alternatives;
-    private final String advisorRecommendation;
-    private final Integer advisorRecommendedIndex;
-    private final HumanDecision humanDecision;
-    private final Integer selectedAlternativeIndex;
-    private final String outcome;
-    private final List<String> log;
+    // Keys stored in the backing map
+    public static final String JOURNEY_ID = "journeyId";
+    public static final String ORIGINAL_JOURNEY = "originalJourney";
+    public static final String DELAY_SECONDS = "delaySeconds";
+    public static final String ALTERNATIVES = "alternatives";
+    public static final String ADVISOR_RECOMMENDATION = "advisorRecommendation";
+    public static final String ADVISOR_RECOMMENDED_INDEX = "advisorRecommendedIndex";
+    public static final String HUMAN_DECISION = "humanDecision";
+    public static final String SELECTED_ALTERNATIVE_INDEX = "selectedAlternativeIndex";
+    public static final String OUTCOME = "outcome";
+    public static final String LOG = "log";
 
-    private DelayWorkflowState(Builder builder) {
-        this.journeyId = builder.journeyId;
-        this.originalJourney = builder.originalJourney;
-        this.delaySeconds = builder.delaySeconds;
-        this.alternatives = builder.alternatives;
-        this.advisorRecommendation = builder.advisorRecommendation;
-        this.advisorRecommendedIndex = builder.advisorRecommendedIndex;
-        this.humanDecision = builder.humanDecision;
-        this.selectedAlternativeIndex = builder.selectedAlternativeIndex;
-        this.outcome = builder.outcome;
-        this.log = builder.log;
+    /**
+     * Channel schema.  The {@code "log"} key uses an appender so successive node updates
+     * each add their entry to the accumulated list rather than replacing it.
+     */
+    public static final Map<String, Channel<?>> SCHEMA = Map.of(
+            LOG, Channels.appender(ArrayList::new)
+    );
+
+    /** Required by langgraph4j's AgentStateFactory contract. */
+    public DelayWorkflowState(Map<String, Object> initData) {
+        super(initData);
     }
 
     public Optional<String> journeyId() {
-        return Optional.ofNullable(journeyId);
+        return value(JOURNEY_ID);
     }
 
     public Optional<JourneyDto> originalJourney() {
-        return Optional.ofNullable(originalJourney);
+        return value(ORIGINAL_JOURNEY);
     }
 
     public Optional<Integer> delaySeconds() {
-        return Optional.ofNullable(delaySeconds);
+        return value(DELAY_SECONDS);
     }
 
+    @SuppressWarnings("unchecked")
     public List<JourneyDto> alternatives() {
-        return alternatives;
+        return this.<List<JourneyDto>>value(ALTERNATIVES).orElse(List.of());
     }
 
     public Optional<String> advisorRecommendation() {
-        return Optional.ofNullable(advisorRecommendation);
+        return value(ADVISOR_RECOMMENDATION);
     }
 
     public Optional<Integer> advisorRecommendedIndex() {
-        return Optional.ofNullable(advisorRecommendedIndex);
+        return value(ADVISOR_RECOMMENDED_INDEX);
     }
 
     public Optional<HumanDecision> humanDecision() {
-        return Optional.ofNullable(humanDecision);
+        return value(HUMAN_DECISION);
     }
 
     public Optional<Integer> selectedAlternativeIndex() {
-        return Optional.ofNullable(selectedAlternativeIndex);
+        return value(SELECTED_ALTERNATIVE_INDEX);
     }
 
-    /** Only ever set once a decision has been applied - its presence means the run has completed. */
+    /** Only set once a decision has been applied - its presence means the run has completed. */
     public Optional<String> outcome() {
-        return Optional.ofNullable(outcome);
+        return value(OUTCOME);
     }
 
+    @SuppressWarnings("unchecked")
     public List<String> log() {
-        return log;
-    }
-
-    public Builder toBuilder() {
-        Builder builder = new Builder();
-        builder.journeyId = journeyId;
-        builder.originalJourney = originalJourney;
-        builder.delaySeconds = delaySeconds;
-        builder.alternatives = alternatives;
-        builder.advisorRecommendation = advisorRecommendation;
-        builder.advisorRecommendedIndex = advisorRecommendedIndex;
-        builder.humanDecision = humanDecision;
-        builder.selectedAlternativeIndex = selectedAlternativeIndex;
-        builder.outcome = outcome;
-        builder.log = log;
-        return builder;
-    }
-
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static final class Builder {
-        private String journeyId;
-        private JourneyDto originalJourney;
-        private Integer delaySeconds;
-        private List<JourneyDto> alternatives = List.of();
-        private String advisorRecommendation;
-        private Integer advisorRecommendedIndex;
-        private HumanDecision humanDecision;
-        private Integer selectedAlternativeIndex;
-        private String outcome;
-        private List<String> log = List.of();
-
-        public Builder journeyId(String journeyId) {
-            this.journeyId = journeyId;
-            return this;
-        }
-
-        public Builder originalJourney(JourneyDto originalJourney) {
-            this.originalJourney = originalJourney;
-            return this;
-        }
-
-        public Builder delaySeconds(Integer delaySeconds) {
-            this.delaySeconds = delaySeconds;
-            return this;
-        }
-
-        public Builder alternatives(List<JourneyDto> alternatives) {
-            this.alternatives = alternatives;
-            return this;
-        }
-
-        public Builder advisorRecommendation(String advisorRecommendation) {
-            this.advisorRecommendation = advisorRecommendation;
-            return this;
-        }
-
-        public Builder advisorRecommendedIndex(Integer advisorRecommendedIndex) {
-            this.advisorRecommendedIndex = advisorRecommendedIndex;
-            return this;
-        }
-
-        public Builder humanDecision(HumanDecision humanDecision) {
-            this.humanDecision = humanDecision;
-            return this;
-        }
-
-        public Builder selectedAlternativeIndex(Integer selectedAlternativeIndex) {
-            this.selectedAlternativeIndex = selectedAlternativeIndex;
-            return this;
-        }
-
-        public Builder outcome(String outcome) {
-            this.outcome = outcome;
-            return this;
-        }
-
-        public Builder log(List<String> log) {
-            this.log = log;
-            return this;
-        }
-
-        public DelayWorkflowState build() {
-            return new DelayWorkflowState(this);
-        }
+        return this.<List<String>>value(LOG).orElse(List.of());
     }
 }
